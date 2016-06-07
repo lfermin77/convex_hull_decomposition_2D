@@ -10,6 +10,9 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   sensor_msgs
   tf
+  nav_msgs
+  cv_bridge
+  image_transport
 )
 
 
