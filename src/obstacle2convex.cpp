@@ -31,6 +31,8 @@ class obstacle2convex
 	tf::StampedTransform transform;
 	ros::Subscriber IMU_sub_;
 	static tf::TransformBroadcaster br_;
+	
+	ros::Timer timer;
 
 	std::string imu_topic_;
 	ros::Subscriber map_sub_;
@@ -52,7 +54,7 @@ class obstacle2convex
 			map_sub_ = n.subscribe("map", 1, &obstacle2convex::mapCallback, this);
 			
 			image_pub_ = it_.advertise("/image_frontier", 1);
-			
+			timer = n.createTimer(ros::Duration(0.5), &obstacle2convex::metronomeCallback, this);
 			cv_ptr.reset (new cv_bridge::CvImage);
 			cv_ptr->encoding = "mono8";
 			
@@ -62,8 +64,12 @@ class obstacle2convex
 		{
 		}
 		
+////////////////////////////		
+		void metronomeCallback(const ros::TimerEvent&)
+		{
+			image_pub_.publish(cv_ptr->toImageMsg());
+		}
 		
-
 //////////////////////////////////		
 		void mapCallback(const nav_msgs::OccupancyGridConstPtr& map)
 		{
@@ -108,8 +114,9 @@ class obstacle2convex
 			vector<cv::Point> Occupied_Points;   // output, locations of non-zero pixels
 			cv::findNonZero(Occupied, Occupied_Points);
 
-/*
+
 			float points_in_image=( map->info.height) * (map->info.width);
+/*
 			float point_fraction = Occupied_Points.size()/( map->info.height * map->info.width);						
 			cout << "Points in vector "<<Occupied_Points.size()<< " out of "<< points_in_image << endl;
 			cout << "Points in vector "<< point_fraction*100 << "%"<<endl;
@@ -120,18 +127,73 @@ class obstacle2convex
 
 	//////////////////////////////////
 	///// Hull Decomposition
-	
-	
+			begin_process = clock();
 
+			vector<cv::Point> convex_hull;			
+			cv::convexHull( Occupied_Points, convex_hull );
+
+
+			cv::Mat dist;
+			cv::distanceTransform(~Occupied, dist, CV_DIST_L2, 3);
+
+
+
+			
+			cv::Mat will_be_destroyed = dist<4;//.clone();	
+//			cv::convexHull( will_be_destroyed, convex_hull );
+			dist = dist <4;
+			
+//			cout <<"big_contours_vector.size() "  << endl;
+			
+			cv::dilate(will_be_destroyed, will_be_destroyed, cv::Mat(), cv::Point(-1,-1), 3, cv::BORDER_CONSTANT, cv::morphologyDefaultBorderValue() );					
+			std::vector<std::vector<cv::Point> > Differential_contour;
+			cv::findContours(will_be_destroyed, Differential_contour, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE );
+//			cout <<"Differential_contour.size() " << Differential_contour.size() << endl;
+			
+			vector<vector<cv::Point> > big_contours_vector;
+			for(int i=0; i < Differential_contour.size(); i++){
+				float current_area = cv::contourArea(Differential_contour[i]);
+//				if(current_area > points_in_image/1000){
+				if(current_area > 100){
+					big_contours_vector.push_back(Differential_contour[i]);
+				}
+			}
+			
+			cv::Mat contour_drawing = cv::Mat::zeros(Occupied.size().height, Occupied.size().width, CV_8UC1);
+			drawContours(contour_drawing, big_contours_vector, -1, 255, -1, 8);
+
+			
+//			cout <<"big_contours_vector.size() " << big_contours_vector.size() << endl;
+			
+			
+			vector<vector<cv::Point> > hull_vector( big_contours_vector.size() +1);
+			hull_vector[0] = convex_hull;
+
+
+			for( int i = 0; i < big_contours_vector.size(); i++ ){  
+			   cv::convexHull( big_contours_vector[i], hull_vector[i+1] ); 
+			}
+
+			drawContours(contour_drawing, hull_vector, -1, 128, 3, 8);
+
+
+
+
+			end_process=clock();   elapsed_secs_process = double(end_process - begin_process) / CLOCKS_PER_SEC;			std::cerr<<"Time elapsed in convex hull "<< elapsed_secs_process*1000 << " ms"<<std::endl<<std::endl;
 
 	//////////////////////
 	///// PUBLISH
-			grad = Occupied;
+//			grad = Occupied;
+//			grad = dist;
+			grad = contour_drawing;
 			
+			cv::flip(grad,grad,0);
 			
 			cv_ptr->encoding = "32FC1";
 			grad.convertTo(grad, CV_32F);
 			grad.copyTo(cv_ptr->image);////most important
+			
+
 
 		}
 
