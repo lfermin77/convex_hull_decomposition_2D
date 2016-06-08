@@ -20,6 +20,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 
 
+using namespace std;
+
 
 
 
@@ -46,8 +48,7 @@ class obstacle2convex
 		obstacle2convex(std::string& imu_topic) : imu_topic_(imu_topic), it_(n)
 			{
 
-			ROS_INFO("Initializing class");
-//			IMU_sub_ = n.subscribe(imu_topic_, 10, &obstacle2convex::imuCallback, this);
+			ROS_INFO("Waiting for map");
 			map_sub_ = n.subscribe("map", 1, &obstacle2convex::mapCallback, this);
 			
 			image_pub_ = it_.advertise("/image_frontier", 1);
@@ -55,37 +56,12 @@ class obstacle2convex
 			cv_ptr.reset (new cv_bridge::CvImage);
 			cv_ptr->encoding = "mono8";
 			
-			
-			ROS_INFO("After subscribe");
 		}
 		
 	~obstacle2convex()
 		{
 		}
 		
-
-	void imuCallback(const sensor_msgs::Imu& imu_in)
-		{
-			static tf::TransformBroadcaster br, br2;
-			transform.setOrigin( tf::Vector3(0, 0, 0) );
-			tf::Quaternion q;
-
-			q=tf::Quaternion(imu_in.orientation.x, imu_in.orientation.y, imu_in.orientation.z, imu_in.orientation.w);
-
-//			transform.setRotation(tf::Quaternion(imu_in.orientation.x, imu_in.orientation.y, imu_in.orientation.z, imu_in.orientation.w));
-
-			transform.setRotation(q);
-			
-//			std::cerr << "  qx:  " << imu_in.orientation.x << "  qy:  " << imu_in.orientation.y << "  qz:  " << imu_in.orientation.z << "  qw:  " << imu_in.orientation.w <<std::endl;
-			
-			br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "imu"));
-
-			q.setRPY(0,0,-M_PI/2);
-			transform.setRotation(q);
-
-			br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "imu", "camera_link"));
-//			ROS_INFO("I'm in");
-		}	
 		
 
 //////////////////////////////////		
@@ -109,9 +85,54 @@ class obstacle2convex
 				map->info.height,
 				map->info.resolution);
 			 } 
-			 
-			 
+			 			 
 			cv_ptr->header = map->header;
+
+	///////////////////////////////////
+	// Occupancy Grid to Image
+			begin_process = clock();
+			
+			cv::Mat Occ_image(map->info.height, map->info.width, CV_8U);
+			Occ_image.data = (unsigned char *)(&(map->data[0]) );
+
+			image_pub_.publish(cv_ptr->toImageMsg());
+			
+			end_process=clock();   elapsed_secs_process = double(end_process - begin_process) / CLOCKS_PER_SEC;			std::cerr<<"Time elapsed in occupancy to image "<< elapsed_secs_process*1000 << " ms"<<std::endl<<std::endl;
+
+	///////////////////////////////////
+	///// Find occupied points
+			begin_process = clock();
+			
+			cv::Mat Occupied = Occ_image>90 & Occ_image<=100;
+
+			vector<cv::Point> Occupied_Points;   // output, locations of non-zero pixels
+			cv::findNonZero(Occupied, Occupied_Points);
+
+/*
+			float points_in_image=( map->info.height) * (map->info.width);
+			float point_fraction = Occupied_Points.size()/( map->info.height * map->info.width);						
+			cout << "Points in vector "<<Occupied_Points.size()<< " out of "<< points_in_image << endl;
+			cout << "Points in vector "<< point_fraction*100 << "%"<<endl;
+*/
+
+
+			end_process=clock();   elapsed_secs_process = double(end_process - begin_process) / CLOCKS_PER_SEC;			std::cerr<<"Time elapsed in image to vector "<< elapsed_secs_process*1000 << " ms"<<std::endl<<std::endl;
+
+	//////////////////////////////////
+	///// Hull Decomposition
+	
+	
+
+
+	//////////////////////
+	///// PUBLISH
+			grad = Occupied;
+			
+			
+			cv_ptr->encoding = "32FC1";
+			grad.convertTo(grad, CV_32F);
+			grad.copyTo(cv_ptr->image);////most important
+
 		}
 
 
