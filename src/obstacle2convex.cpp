@@ -110,9 +110,11 @@ class obstacle2convex
 			begin_process = clock();
 			
 			cv::Mat Occupied = Occ_image>90 & Occ_image<=100;
+			cv::Mat cleared_area = Occ_image>=0 & Occ_image<=10;
 
-			vector<cv::Point> Occupied_Points;   // output, locations of non-zero pixels
-			cv::findNonZero(Occupied, Occupied_Points);
+			vector<cv::Point> Occupied_Points, cleared_points;   // output, locations of non-zero pixels
+//			cv::findNonZero(Occupied, Occupied_Points);
+//			cv::findNonZero(cleared_area,cleared_points);
 
 
 			float points_in_image=( map->info.height) * (map->info.width);
@@ -130,22 +132,25 @@ class obstacle2convex
 			begin_process = clock();
 
 			vector<cv::Point> convex_hull;			
-			cv::convexHull( Occupied_Points, convex_hull );
+//			cv::convexHull( Occupied_Points, convex_hull );
+//			cv::convexHull( cleared_points, convex_hull );
 
 
 			cv::Mat dist;
 			cv::distanceTransform(~Occupied, dist, CV_DIST_L2, 3);
 
+			std::vector<std::vector<cv::Point> > first_contour;
+			cv::findContours(cleared_area, first_contour, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE );
+
 
 
 			
-			cv::Mat will_be_destroyed = dist<4;//.clone();	
+			cv::Mat will_be_destroyed = dist<2;//.clone();	
 //			cv::convexHull( will_be_destroyed, convex_hull );
-			dist = dist <4;
+			dist = dist <2;
 			
 //			cout <<"big_contours_vector.size() "  << endl;
 			
-			cv::dilate(will_be_destroyed, will_be_destroyed, cv::Mat(), cv::Point(-1,-1), 3, cv::BORDER_CONSTANT, cv::morphologyDefaultBorderValue() );					
 			std::vector<std::vector<cv::Point> > Differential_contour;
 			cv::findContours(will_be_destroyed, Differential_contour, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE );
 //			cout <<"Differential_contour.size() " << Differential_contour.size() << endl;
@@ -160,22 +165,26 @@ class obstacle2convex
 			}
 			
 			cv::Mat contour_drawing = cv::Mat::zeros(Occupied.size().height, Occupied.size().width, CV_8UC1);
-			drawContours(contour_drawing, big_contours_vector, -1, 255, -1, 8);
+
+//			for(int i=0;i < big_contours_vector.size() ; i++) drawContours(contour_drawing, big_contours_vector, i, 255, -1, 8);
 
 			
 //			cout <<"big_contours_vector.size() " << big_contours_vector.size() << endl;
 			
 			
 			vector<vector<cv::Point> > hull_vector( big_contours_vector.size() +1);
-			hull_vector[0] = convex_hull;
+//			hull_vector[0] = convex_hull;
+//			hull_vector[0] = first_contour[0];
 
 
 			for( int i = 0; i < big_contours_vector.size(); i++ ){  
 			   cv::convexHull( big_contours_vector[i], hull_vector[i+1] ); 
 			}
 
-			drawContours(contour_drawing, hull_vector, -1, 128, 3, 8);
-
+//			drawContours(contour_drawing, hull_vector, -1, 128, 3, 8);
+			for(int i=0;i < hull_vector.size() ; i++) drawContours(contour_drawing, hull_vector, i, 128, 3, 8);
+			for(int i=0;i < big_contours_vector.size() ; i++) drawContours(contour_drawing, big_contours_vector, i, 255, -1, 8);
+			for(int i=0;i < first_contour.size() ; i++) drawContours(contour_drawing, first_contour, i, 200, 3, 8);
 
 
 
